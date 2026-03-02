@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: outreach_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: outreach_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: outreach_api
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - playwright_cache:/root/.cache/ms-playwright
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/outreach_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: outreach_dashboard
+    command: streamlit run src/dashboard/app.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/outreach_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: outreach_scheduler
+    command: python -m src.core.scheduler
+    volumes:
+      - .:/app
+      - playwright_cache:/root/.cache/ms-playwright
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/outreach_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+
+volumes:
+  postgres_data:
+  playwright_cache:
